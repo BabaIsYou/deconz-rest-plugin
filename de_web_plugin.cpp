@@ -163,7 +163,6 @@ static const SupportedDevice supportedDevices[] = {
     { VENDOR_BOSCH, "ISW-ZPR1-WP13", boschMacPrefix },
     { VENDOR_BOSCH, "RFDL-ZB-MS", emberMacPrefix }, // Bosch motion sensor
     { VENDOR_BOSCH2, "AIR", tiMacPrefix }, // Bosch Air quality sensor
-    { VENDOR_CENTRALITE, "Motion Sensor-A", emberMacPrefix },
     { VENDOR_CENTRALITE, "3321-S", emberMacPrefix }, // Centralite multipurpose sensor
     { VENDOR_CENTRALITE, "3325-S", emberMacPrefix }, // Centralite motion sensor
     { VENDOR_CENTRALITE, "3305-S", emberMacPrefix }, // Centralite motion sensor
@@ -683,7 +682,14 @@ DeRestPluginPrivate::DeRestPluginPrivate(QObject *parent) :
 
         if (filterBronze) { filter.append("Bronze"); }
         if (filterSilver) { filter.append("Silver"); }
-        if (filterGold) { filter.append("Gold"); }
+        if (filterGold)
+        {
+            filter.append("Gold");
+        }
+        else
+        {
+            DBG_Printf(DBG_INFO, "Warning: DDF Gold status is not enabled\n");
+        }
 
         deviceDescriptions->setEnabledStatusFilter(filter);
     }
@@ -2985,7 +2991,7 @@ void DeRestPluginPrivate::addLightNode(const deCONZ::Node *node)
         if (DB_GetSubDeviceItemCount(lightNode.item(RAttrUniqueId)->toLatin1String()) > 0)
         {
             const DeviceDescription &ddf = deviceDescriptions->get(&lightNode);
-            if (ddf.isValid() && (DEV_TestManaged() || deviceDescriptions->enabledStatusFilter().contains(ddf.status)))
+            if (ddf.isValid() && (DEV_TestManaged() || DDF_IsStatusEnabled(ddf.status)))
             {
                 if (ddf.path.isEmpty())
                 {
@@ -4379,7 +4385,11 @@ void DeRestPluginPrivate::checkSensorNodeReachable(Sensor *sensor, const deCONZ:
 
             updated = true;
         }
-        if (!DEV_TestStrict())
+
+        auto *device = DEV_GetDevice(m_devices, sensor->address().ext());
+        const bool devManaged = device && device->managed();
+
+        if (!DEV_TestStrict() && !devManaged)
         {
             if (sensor->type() == QLatin1String("ZHATime") && !sensor->mustRead(READ_TIME))
             {
@@ -8338,8 +8348,7 @@ void DeRestPluginPrivate::addSensorNode(const deCONZ::Node *node, const SensorFi
         if (modelId == QLatin1String("button") ||
             modelId.startsWith(QLatin1String("multi")) ||
             modelId == QLatin1String("water") ||
-            R_GetProductId(&sensorNode) == QLatin1String("NAS-AB02B0 Siren") ||
-            modelId == QLatin1String("Motion Sensor-A"))
+            R_GetProductId(&sensorNode) == QLatin1String("NAS-AB02B0 Siren"))
         {
             // no support for some IAS flags
         }
@@ -11186,7 +11195,10 @@ bool DeRestPluginPrivate::processZclAttributes(Sensor *sensorNode)
         }
     }
 
-    if (!DEV_TestStrict())
+    auto *device = DEV_GetDevice(m_devices, sensorNode->address().ext());
+    const bool devManaged = device && device->managed();
+
+    if (!DEV_TestStrict() && !devManaged)
     {
         if (sensorNode->mustRead(READ_TIME) && tNow > sensorNode->nextReadTime(READ_TIME))
         {
@@ -12329,8 +12341,6 @@ void DeRestPluginPrivate::handleZclAttributeReportIndication(const deCONZ::ApsDa
                     sensor.setLastAttributeReportBind(idleTotalCounter);
                 }
             }
-
-            checkPollControlClusterTask(&sensor);
         }
     }
 
@@ -15269,6 +15279,11 @@ void DeRestPluginPrivate::delayedFastEnddeviceProbe(const deCONZ::NodeEvent *eve
 
         if (!hasNodeDescriptor)
         {
+            if (DEV_TestManaged())
+            {
+                return; // Device code handles this
+            }
+
             DBG_Printf(DBG_INFO, "[1] get node descriptor for 0x%016llx\n", sc->address.ext());
 
             if (ZDP_NodeDescriptorReq(sc->address, apsCtrl))
@@ -15284,6 +15299,11 @@ void DeRestPluginPrivate::delayedFastEnddeviceProbe(const deCONZ::NodeEvent *eve
 
         if (!hasActiveEndpoints)
         {
+            if (DEV_TestManaged())
+            {
+                return; // Device code handles this
+            }
+
             DBG_Printf(DBG_INFO, "[2] get active endpoints for 0x%016llx\n", sc->address.ext());
 
             if (ZDP_ActiveEndpointsReq(sc->address, apsCtrl))
@@ -15312,7 +15332,12 @@ void DeRestPluginPrivate::delayedFastEnddeviceProbe(const deCONZ::NodeEvent *eve
                     }
                 }
 
-                if (ep) // fetch this
+                if (DEV_TestManaged())
+                {
+                    return; // Device code handles this
+                }
+
+                if (ep) // fetch
                 {
                     DBG_Printf(DBG_INFO, "[3] get simple descriptor 0x%02X for 0x%016llx\n", ep, sc->address.ext());
 
@@ -16898,7 +16923,7 @@ void DeRestPlugin::idleTimerFired()
                             }
                         }
 
-                        if (!DEV_TestStrict())
+                        if (!DEV_TestStrict() && !devManaged)
                         {
                             if (*ci == TIME_CLUSTER_ID)
                             {
@@ -17800,22 +17825,32 @@ Resource *DEV_GetResource(Resource::Handle hnd)
 // Testing code uses a mocked implementation.
 Resource *DEV_AddResource(const Sensor &sensor)
 {
-    plugin->sensors.push_back(sensor);
-    auto &s = plugin->sensors.back();
-    s.setHandle(R_CreateResourceHandle(&s, plugin->sensors.size() - 1));
+    Resource *r = DEV_GetResource(sensor.prefix(), sensor.item(RAttrUniqueId)->toString());
 
-    return &s;
+    if (!r)
+    {
+        plugin->sensors.push_back(sensor);
+        r = &plugin->sensors.back();
+        r->setHandle(R_CreateResourceHandle(r, plugin->sensors.size() - 1));
+    }
+
+    return r;
 }
 
 // Used by Device class when creating LightNodes.
 // Testing code uses a mocked implementation.
 Resource *DEV_AddResource(const LightNode &lightNode)
 {
-    plugin->nodes.push_back(lightNode);
-    auto &l = plugin->nodes.back();
-    l.setHandle(R_CreateResourceHandle(&l, plugin->nodes.size() - 1));
+    Resource *r = DEV_GetResource(lightNode.prefix(), lightNode.item(RAttrUniqueId)->toString());
 
-    return &l;
+    if (!r)
+    {
+        plugin->nodes.push_back(lightNode);
+        r = &plugin->nodes.back();
+        r->setHandle(R_CreateResourceHandle(r, plugin->nodes.size() - 1));
+    }
+
+    return r;
 }
 
 /*!  Called by init DDF to allocate new groups for config.group = "auto [,auto, ...]".

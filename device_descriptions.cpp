@@ -267,6 +267,14 @@ DeviceDescriptions::DeviceDescriptions(QObject *parent) :
 
         d_ptr2->parseFunctions.push_back(fn);
     }
+    
+    {
+        DDF_FunctionDescriptor fn;
+        fn.name = "time";
+        fn.description = "Specialized function to parse time, local and last set time from read/report commands of the time cluster and auto-sync time if needed.";
+
+        d_ptr2->parseFunctions.push_back(fn);
+    }
 
     {
         DDF_FunctionDescriptor fn;
@@ -379,7 +387,11 @@ DeviceDescriptions::~DeviceDescriptions()
 
 void DeviceDescriptions::setEnabledStatusFilter(const QStringList &filter)
 {
-    d_ptr2->enabledStatusFilter = filter;
+    if (d_ptr2->enabledStatusFilter != filter)
+    {
+        d_ptr2->enabledStatusFilter = filter;
+        DBG_Printf(DBG_INFO, "DDF enabled for %s status\n", qPrintable(filter.join(QLatin1String(", "))));
+    }
 }
 
 const QStringList &DeviceDescriptions::enabledStatusFilter() const
@@ -393,6 +405,15 @@ DeviceDescriptions *DeviceDescriptions::instance()
 {
     Q_ASSERT(_instance);
     return _instance;
+}
+
+bool DDF_IsStatusEnabled(const QString &status)
+{
+    if (_priv)
+    {
+        return _priv->enabledStatusFilter.contains(status, Qt::CaseInsensitive);
+    }
+    return false;
 }
 
 /*! Helper to transform hard C++ coded parse functions to DDF.
@@ -538,13 +559,24 @@ const DeviceDescription &DeviceDescriptions::get(const Resource *resource, DDF_M
     const auto manufacturer = resource->item(RAttrManufacturerName)->toString();
     const auto manufacturerConstant = stringToConstant(manufacturer);
 
-    const auto i = std::find_if(d->descriptions.begin(), d->descriptions.end(), [&modelId, &manufacturer, &manufacturerConstant](const DeviceDescription &ddf)
-    {
-        return (ddf.modelIds.contains(modelId) && (ddf.manufacturerNames.contains(manufacturer) || ddf.manufacturerNames.contains(manufacturerConstant)));
-    });
+    auto i = d->descriptions.begin();
 
-    if (i != d->descriptions.end())
+    for (;;)
     {
+        i = std::find_if(i, d->descriptions.end(), [&modelId, &manufacturer, &manufacturerConstant](const DeviceDescription &ddf)
+        {
+            // compare manufacturer name case insensitive
+            const auto m = std::find_if(ddf.manufacturerNames.cbegin(), ddf.manufacturerNames.cend(),
+                                       [&](const auto &x){ return x.compare(manufacturer, Qt::CaseInsensitive) == 0; });
+
+            return (ddf.modelIds.contains(modelId) && (m != ddf.manufacturerNames.cend() || ddf.manufacturerNames.contains(manufacturerConstant)));
+        });
+
+        if (i == d->descriptions.end())
+        {
+            break;
+        }
+
         if (!i->matchExpr.isEmpty() && match == DDF_EvalMatchExpr)
         {
             DeviceJs *djs = DeviceJs::instance();
@@ -563,6 +595,7 @@ const DeviceDescription &DeviceDescriptions::get(const Resource *resource, DDF_M
             {
                 DBG_Printf(DBG_DDF, "failed to evaluate matchexpr for %s: %s, err: %s\n", qPrintable(resource->item(RAttrUniqueId)->toString()), qPrintable(i->matchExpr), qPrintable(djs->errorString()));
             }
+            i++; // proceed search
         }
         else
         {
@@ -1034,7 +1067,7 @@ void DeviceDescriptions::handleDDFInitRequest(const Event &event)
         {
             result = 0;
 
-            if (!DEV_TestManaged() && !d->enabledStatusFilter.contains(ddf.status))
+            if (!DEV_TestManaged() && !DDF_IsStatusEnabled(ddf.status))
             {
                 result = 2;
             }
@@ -1102,7 +1135,7 @@ static bool DDF_ReadConstantsJson(const QString &path, std::map<QString,QString>
 
     if (!doc.isObject())
     {
-        DBG_Printf(DBG_INFO, "failed to read device constants: %s, err: %s, offset: %d\n", qPrintable(path), qPrintable(error.errorString()), error.offset);
+        DBG_Printf(DBG_INFO, "DDF failed to read device constants: %s, err: %s, offset: %d\n", qPrintable(path), qPrintable(error.errorString()), error.offset);
         return false;
     }
 
@@ -1151,7 +1184,7 @@ static DeviceDescription::Item DDF_ParseItem(const QJsonObject &obj)
     }
     else if (getResourceItemDescriptor(result.name, result.descriptor))
     {
-        DBG_Printf(DBG_INFO, "DDF: loaded resource item descriptor: %s\n", result.descriptor.suffix);
+        DBG_Printf(DBG_DDF, "DDF loaded resource item descriptor: %s\n", result.descriptor.suffix);
 
         if (obj.contains(QLatin1String("access")))
         {
@@ -1222,7 +1255,7 @@ static DeviceDescription::Item DDF_ParseItem(const QJsonObject &obj)
     }
     else
     {
-        DBG_Printf(DBG_INFO, "DDF: failed to load resource item descriptor: %s\n", result.name.c_str());
+        DBG_Printf(DBG_DDF, "DDF failed to load resource item descriptor: %s\n", result.name.c_str());
     }
 
     return result;
@@ -1592,7 +1625,7 @@ static DeviceDescription DDF_ParseDeviceObject(const QJsonObject &obj, const QSt
     const auto keys = obj.keys();
     for (const auto &key : keys)
     {
-        DBG_Printf(DBG_INFO, "DDF: %s: %s\n", qPrintable(key), qPrintable(obj.value(key).toString()));
+        DBG_Printf(DBG_DDF, "DDF %s: %s\n", qPrintable(key), qPrintable(obj.value(key).toString()));
     }
 
     const auto subDevicesArr = subDevices.toArray();
@@ -1650,7 +1683,7 @@ static DeviceDescription::Item DDF_ReadItemFile(const QString &path)
 
     if (error.error != QJsonParseError::NoError)
     {
-        DBG_Printf(DBG_INFO, "DDF: failed to read %s, err: %s, offset: %d\n", qPrintable(path), qPrintable(error.errorString()), error.offset);
+        DBG_Printf(DBG_DDF, "DDF failed to read %s, err: %s, offset: %d\n", qPrintable(path), qPrintable(error.errorString()), error.offset);
         return { };
     }
 
@@ -1686,7 +1719,7 @@ static DDF_SubDeviceDescriptor DDF_ReadSubDeviceFile(const QString &path)
 
     if (error.error != QJsonParseError::NoError)
     {
-        DBG_Printf(DBG_INFO, "DDF: failed to read %s, err: %s, offset: %d\n", qPrintable(path), qPrintable(error.errorString()), error.offset);
+        DBG_Printf(DBG_DDF, "DDF failed to read %s, err: %s, offset: %d\n", qPrintable(path), qPrintable(error.errorString()), error.offset);
         return result;
     }
 
@@ -1827,7 +1860,7 @@ static std::vector<DeviceDescription> DDF_ReadDeviceFile(const QString &path)
 
     if (error.error != QJsonParseError::NoError)
     {
-        DBG_Printf(DBG_INFO, "DDF: failed to read %s, err: %s, offset: %d\n", qPrintable(path), qPrintable(error.errorString()), error.offset);
+        DBG_Printf(DBG_DDF, "DDF failed to read %s, err: %s, offset: %d\n", qPrintable(path), qPrintable(error.errorString()), error.offset);
         return result;
     }
 
@@ -1928,7 +1961,7 @@ uint8_t DDF_GetSubDeviceOrder(const QString &type)
     }
 
 #ifdef QT_DEBUG
-    DBG_Printf(DBG_DDF, "DDF: No subdevice for type: %s\n", qPrintable(type));
+    DBG_Printf(DBG_DDF, "DDF No subdevice for type: %s\n", qPrintable(type));
 #endif
 
     return SUBDEVICE_DEFAULT_ORDER;

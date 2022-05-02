@@ -2,8 +2,9 @@
   "schema": "devcap1.schema.json",
   "manufacturername": "$MF_LUMI",
   "modelid": "lumi.sensor_ht",
-  "product": "WSDCGQ01LM",
-  "sleeper": false,
+  "vendor": "Xiaomi",
+  "product": "Aqara temp./hum. sensor WSDCGQ01LM",
+  "sleeper": true,
   "status": "Gold",
   "subdevices": [
     {
