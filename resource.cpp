@@ -205,6 +205,7 @@ const char *RConfigLastChangeTime = "config/lastchange_time";
 const char *RConfigLat = "config/lat";
 const char *RConfigLedIndication = "config/ledindication";
 const char *RConfigLevelMin = "config/levelmin";
+const char *RConfigLocalOccupancy = "config/local_occupancy"
 const char *RConfigLocalTime = "config/localtime";
 const char *RConfigLocked = "config/locked";
 const char *RConfigLong = "config/long";
@@ -239,6 +240,7 @@ const char *RConfigTemperature = "config/temperature";
 const char *RConfigTemperatureMeasurement = "config/temperaturemeasurement";
 const char *RConfigTholdDark = "config/tholddark";
 const char *RConfigTholdOffset = "config/tholdoffset";
+const char *RConfigUnoccupiedHeatSetpoint = "config/unoccupiedheatsetpoint"
 const char *RConfigUrl = "config/url";
 const char *RConfigUsertest = "config/usertest";
 const char *RConfigWindowCoveringType = "config/windowcoveringtype";
@@ -423,6 +425,7 @@ void initResourceDescriptors()
     rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeTime, QVariant::String, RConfigLastChangeTime));
     rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeString, QVariant::String, RConfigLat));
     rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeBool, QVariant::Bool, RConfigLedIndication));
+    rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeUInt8, QVariant::Double, RConfigLocalOccupancy));
     rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeTime, QVariant::String, RConfigLocalTime));
     rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeBool, QVariant::Bool, RConfigLocked));
     rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeBool, QVariant::Bool, RConfigSetValve));
@@ -456,6 +459,7 @@ void initResourceDescriptors()
     rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeString, QVariant::String, RConfigTemperatureMeasurement));
     rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeUInt16, QVariant::Double, RConfigTholdDark, 0, 0xfffe));
     rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeUInt16, QVariant::Double, RConfigTholdOffset, 1, 0xfffe));
+    rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeInt16, QVariant::Double, RConfigUnoccupiedHeatSetpoint));
     rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeString, QVariant::String, RConfigUrl));
     rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeBool, QVariant::Bool, RConfigUsertest));
     rItemDescriptors.emplace_back(ResourceItemDescriptor(DataTypeUInt8, QVariant::Double, RConfigWindowCoveringType));
