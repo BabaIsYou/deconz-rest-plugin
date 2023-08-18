@@ -4,7 +4,7 @@
   "modelid": ["TS0601","TS0601","TS0601"],
   "product": "2.4GHz mmWave radar w/LED",
   "sleeper": false,
-  "status": "Silver",
+  "status": "Gold",
     "subdevices": [
     {
       "type": "$TYPE_PRESENCE_SENSOR",
@@ -70,7 +70,7 @@
           "default": 1
         },
         {
-          "name": "config/duration",
+          "name": "config/fadingtime",
           "description": "Shows the duration of absence in minutes",
           "read": {
             "fn": "none"
